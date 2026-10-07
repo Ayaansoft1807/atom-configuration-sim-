@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bohr Atom Shell Simulator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { margin: 0 0 4px 0; font-size: 22px; color: #38bdf8; }
+    .sub { color: #94a3b8; font-size: 13px; margin-bottom: 14px; }
+    .panel {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 12px 18px;
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    select, input[type="number"] {
+      background: #0f172a;
+      color: #38bdf8;
+      border: 1px solid #475569;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .shell-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+    }
+    button {
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.active {
+      background: #0284c7;
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+    .status {
+      text-align: center;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .status span { color: #facc15; font-family: monospace; font-weight: bold; }
+    canvas {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>⚡ Bohr Atom Shell Simulator</h1>
+  <div class="sub">Complete 118 Elements (Shells K to Q)</div>
+
+  <div class="panel">
+    <div class="row">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <label for="elemSelect"><strong>Element:</strong></label>
+        <select id="elemSelect" style="max-width:240px;"></select>
+        <input type="number" id="zInput" min="1" max="118" value="6" style="width:65px;">
+      </div>
+      <label style="font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+        <input type="checkbox" id="showAll" checked> Show all filled shells
+      </label>
+    </div>
+
+    <div class="shell-nav" id="shellButtons"></div>
+
+    <div class="status">
+      <div>Configuration: <span id="cfgText">2, 4</span></div>
+      <div>Selected Shell: <strong id="selText" style="color:#38bdf8;">L (n=2)</strong></div>
+    </div>
+  </div>
+
+  <canvas id="atomCanvas" width="560" height="560"></canvas>
+
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const shellNames = ['K', 'L', 'M', 'N', 'O', 'P', 'Q'];
+    const shellCapacities = [2, 8, 18, 32, 50, 72, 98];
+
+    const elementSymbols = [
+      "H","He","Li","Be","B","C","N","O","F","Ne","Na","Mg","Al","Si","P","S","Cl","Ar",
+      "K","Ca","Sc","Ti","V","Cr","Mn","Fe","Co","Ni","Cu","Zn","Ga","Ge","As","Se","Br","Kr",
+      "Rb","Sr","Y","Zr","Nb","Mo","Tc","Ru","Rh","Pd","Ag","Cd","In","Sn","Sb","Te","I","Xe",
+      "Cs","Ba","La","Ce","Pr","Nd","Pm","Sm","Eu","Gd","Tb","Dy","Ho","Er","Tm","Yb","Lu","Hf",
+      "Ta","W","Re","Os","Ir","Pt","Au","Hg","Tl","Pb","Bi","Po","At","Rn","Fr","Ra","Ac","Th",
+      "Pa","U","Np","Pu","Am","Cm","Bk","Cf","Es","Fm","Md","No","Lr","Rf","Db","Sg","Bh","Hs",
+      "Mt","Ds","Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og"
+    ];
+
+    // Compute ground-state shell filling using orbital order
+    function calculateShells(z) {
+      const order = [
+        {n:1, max:2}, {n:2, max:2}, {n:2, max:6}, {n:3, max:2}, {n:3, max:6},
+        {n:4, max:2}, {n:3, max:10}, {n:4, max:6}, {n:5, max:2}, {n:4, max:10},
+        {n:5, max:6}, {n:6, max:2}, {n:4, max:14}, {n:5, max:10}, {n:6, max:6},
+        {n:7, max:2}, {n:5, max:14}, {n:6, max:10}, {n:7, max:6}
+      ];
+      let res = [0, 0, 0, 0, 0, 0, 0];
+      let rem = z;
+      for (let sub of order) {
+        if (rem <= 0) break;
+        let take = Math.min(rem, sub.max);
+        res[sub.n - 1] += take;
+        rem -= take;
+      }
+      // Common ground state adjustments
+      if (z === 24) res = [2, 8, 13, 1, 0, 0, 0];
+      if (z === 29) res = [2, 8, 18, 1, 0, 0, 0];
+      if (z === 46) res = [2, 8, 18, 18, 0, 0, 0];
+      if (z === 47) res = [2, 8, 18, 18, 1, 0, 0];
+      if (z === 79) res = [2, 8, 18, 32, 18, 1, 0];
+      if (z === 93) res = [2, 8, 18, 32, 22, 9, 2];
+      return res;
+    }
+
+    let currentZ = 6;
+    let selectedN = 2;
+    let angle = 0;
+
+    const elemSelect = document.getElementById('elemSelect');
+    const zInput = document.getElementById('zInput');
+    const showAllBox = document.getElementById('showAll');
+    const btnContainer = document.getElementById('shellButtons');
+    const cfgText = document.getElementById('cfgText');
+    const selText = document.getElementById('selText');
+    const canvas = document.getElementById('atomCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Populate dropdown
+    elementSymbols.forEach((sym, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx + 1;
+      opt.textContent = `${idx + 1} - ${sym}`;
+      if (idx + 1 === 6) opt.selected = true;
+      elemSelect.appendChild(opt);
+    });
+
+    // Create shell buttons
+    shellNames.forEach((name, i) => {
+      const btn = document.createElement('button');
+      btn.id = `shell-btn-${i + 1}`;
+      btn.textContent = `Shell ${name} (n=${i + 1})`;
+      btn.onclick = () => {
+        selectedN = i + 1;
+        updateUI();
+      };
+      btnContainer.appendChild(btn);
+    });
+
+    function updateUI() {
+      document.querySelectorAll('.shell-nav button').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById(`shell-btn-${selectedN}`);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      elemSelect.value = currentZ;
+      zInput.value = currentZ;
+
+      const shells = calculateShells(currentZ);
+      const activeOnly = shells.filter(c => c > 0);
+      cfgText.textContent = activeOnly.join(', ');
+
+      const count = shells[selectedN - 1];
+      const maxCap = shellCapacities[selectedN - 1];
+      selText.textContent = `${shellNames[selectedN - 1]} (n=${selectedN}) — ${count} electrons (Capacity: ${maxCap})`;
+    }
+
+    function setElement(z) {
+      if (isNaN(z) || z < 1) z = 1;
+      if (z > 118) z = 118;
+      currentZ = z;
+      const shells = calculateShells(currentZ);
+      for (let i = shells.length - 1; i >= 0; i--) {
+        if (shells[i] > 0) {
+          selectedN = i + 1;
+          break;
+        }
+      }
+      updateUI();
+    }
+
+    elemSelect.onchange = (e) => setElement(parseInt(e.target.value, 10));
+    zInput.onchange = (e) => setElement(parseInt(e.target.value, 10));
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const shells = calculateShells(currentZ);
+      const sym = elementSymbols[currentZ - 1];
+
+      // Nucleus
+      ctx.beginPath();
+      ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+      ctx.fillStyle = '#ef4444';
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sym, cx, cy);
+
+      // Shells & Electrons
+      const baseR = 32;
+      shellNames.forEach((name, i) => {
+        const n = i + 1;
+        const r = 26 + n * baseR;
+        const eCount = shells[i];
+        const isSelected = n === selectedN;
+
+        // Orbit ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        if (isSelected) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.2;
+          ctx.setLineDash([]);
+        } else {
+          ctx.strokeStyle = eCount > 0 ? '#475569' : '#1e293b';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+        }
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = isSelected ? '#38bdf8' : (eCount > 0 ? '#64748b' : '#334155');
+        ctx.font = '10px monospace';
+        ctx.fillText(name, cx, cy - r + 9);
+
+        // Orbiting electrons
+        const drawThese = showAllBox.checked ? (eCount > 0) : isSelected;
+        if (drawThese && eCount > 0) {
+          for (let e = 0; e < eCount; e++) {
+            const theta = angle * (1.6 / n) + (e * (2 * Math.PI / eCount));
+            const ex = cx + r * Math.cos(theta);
+            const ey = cy + r * Math.sin(theta);
+
+            ctx.beginPath();
+            ctx.arc(ex, ey, 4.2, 0, Math.PI * 2);
+            ctx.fillStyle = isSelected ? '#38bdf8' : '#94a3b8';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      });
+
+      angle += 0.015;
+      requestAnimationFrame(draw);
+    }
+
+    updateUI();
+    draw();
+  });
+</script>
+</body>
+</html>
